@@ -1,0 +1,115 @@
+const uid = require("cuid");
+
+/**
+* @typedef {string} ID A universally unique ID
+*/
+
+/**
+* @constructs Neuron
+* 
+* @prop {ID} id Neuron's unique ID
+* @prop {number} bias
+*
+* @prop {Object} incoming Incoming connections
+* @prop {{ [ID]: Neuron }} incoming.neurons An `Object` of neurons, `{ "id_1": Nueron, "id_2": neuron }` - _searching an object is `O(1)`, while searching an array is `O(n)`_
+* @prop {{ [ID]: number }} incoming.weights An `Object` of connection weights to `neurons`, `{ "id_1": number, "id_2": number }` - _searching an object is `O(1)`, while searching an array is `O(n)`_
+*
+* @prop {Object} outgoing Outgoing connections
+* @prop {{ [ID]: Neuron }} outgoing.neurons An `Object` of neurons, `{ "id_1": Nueron, "id_2": neuron }` - _searching an object is `O(1)`, while searching an array is `O(n)`_
+* @prop {{ [ID]: number }} outgoing.weights An `Object` of connection weights to `neurons`, `{ "id_1": number, "id_2": number }` - _searching an object is `O(1)`, while searching an array is `O(n)`_
+*
+* @prop {number} _number Derivative of last output
+* @prop {number} number Last output
+* @prop {number} error Last error
+*/
+function Neuron(bias) {
+  this.id = uid(); // ID
+  this.bias = bias == undefined ? Math.random() * 2 - 1 : bias; // this.bias ∈ ℝ && -1 < this.bias < 1
+  
+  // Incoming Connections
+  this.incoming = {
+    neurons: {}, // new Map()
+    weights: {} // new Map()
+  }
+  // Outgoing Connections
+  this.outgoing = {
+    neurons: {}, // new Map()
+    weights: {} // new Map()
+  }
+
+  this._output; // f'(x)
+  this.output; // f(x)
+  this.error; // E'(f(x))
+  
+  /**
+  * @param {Neuron} neuron Will create an outgoing connection to `neuron`
+  * @param {number} [weight] A real number, `x` - _usually `-1 < x < 1`_
+  * 
+  * @returns {undefined}
+  */
+  this.connect = function(neuron, weight) {
+    this.outgoing.neurons[neuron.id] = neuron;
+    neuron.incoming.neurons[this.id] = this;
+    this.outgoing.weights[neuron.id] = neuron.incoming.weights[this.id] = weight == undefined ? Math.random() * 2 - 1 : weight; // weight ∈ ℝ && -1 < weight < 1
+  }
+  
+  /**
+  * @param {number} input A real number, `x` - _usually `-Infinity < x < Infinity`_
+  *
+  * @returns {number} Return neuron's activation result
+  */
+  this.activate = function(input) {
+    const self = this;
+    
+    function sigmoid(x) { return 1 / (1 + Math.exp(-x)) } // f(x) = 1 / (1 + e^(-x))
+    function _sigmoid(x) { return sigmoid(x) * (1 - sigmoid(x)) } // f'(x) = f(x) * (1 - f(x))
+    
+    // Input Neurons
+    if(input) {
+      this._output = 1; // f'(x)
+      this.output = input; // f(x)
+    }
+    // Hidden/Output Neurons
+    else {
+      // Σ (x • w)
+      const sum = Object.keys(this.incoming.targets).reduce(function(total, target, index) {
+        return total += self.incoming.targets[target].output * self.incoming.weights[target];
+      }, this.bias);
+      
+      this._output = _sigmoid(sum); // f'(x)
+      this.output = sigmoid(sum); // f(x)
+    }
+    
+    return this.output;
+  }
+  
+  /**
+  * Updates incoming weights by `rate` based on last output's distance from `target`
+  *
+  * @param {number} [target] Used for training a neural network; `target` is the number that the immediately previous `neuron.activate()` should have returned
+  * @param {number} [rate=0.3] Rate of learning - _could/should be smaller (e.g. `0.1`, `0.001`, etc.) for larger datasets_
+  *
+  * @returns {number} Returns the neurons marginal error
+  */
+  this.propagate = function(target, rate=0.3) {
+    const self = this;
+    
+    //𝛿E /𝛿squash
+    const sum = target == undefined ? Object.keys(this.outgoing.targets).reduce(function(total, target, index) {
+        // Δweight
+        self.outgoing.targets[target].incoming.weights[self.id] = self.outgoing.weights[target] -= rate * self.outgoing.targets[target].error * self.output;
+        
+        return total += self.outgoing.targets[target].error * self.outgoing.weights[target];
+      }, 0) : this.output - target;
+    
+    // 𝛿squash/𝛿sum
+    this.error = sum * this._output
+    
+    // Δbias
+    this.bias -= rate * this.error;
+    
+    return this.error;
+  }
+}
+
+module.exports = Neuron;
